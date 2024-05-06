@@ -8,6 +8,7 @@ environment:
 
 dependencies:
   connectivity_plus: ^6.0.3
+  firebase_core: ^2.30.1
   flutter:
     sdk: flutter
   flutter_highlight: ^0.7.0
