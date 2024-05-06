@@ -1,5 +1,3 @@
-// ignore_for_file: prefer_const_constructors
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
@@ -10,6 +8,7 @@ import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:flutter_highlight/themes/github.dart';
 import 'dart:convert'; // For converting process output
 import 'package:permission_handler/permission_handler.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 void main() {
   runApp(const MainApp());
@@ -48,7 +47,6 @@ class FileViewerScreen extends StatefulWidget {
   _FileViewerScreenState createState() => _FileViewerScreenState();
 }
 
-
 class _TerminalScreenState extends State<TerminalScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -61,14 +59,14 @@ class _TerminalScreenState extends State<TerminalScreen> {
   final Map<String, Map<String, Color>> themes = {
     "Default": {'text': Colors.green, 'background': Colors.black},
     "White on Blue": {'text': Colors.white, 'background': Colors.blue.shade900},
-    "Yellow on Dark": {'text': Colors.yellow, 'background': Colors.grey.shade50},
+    "Yellow on Dark": {'text': Colors.yellow, 'background': Colors.grey.shade800},
     "Red on Grey": {'text': Colors.red, 'background': Colors.grey.shade300},
     "Cyan on Navy": {'text': Colors.cyan, 'background': Colors.blueGrey.shade900},
     "Orange on Dark Grey": {'text': Colors.orange, 'background': Colors.grey.shade800},
     "Lime on Dark Blue": {'text': Colors.limeAccent, 'background': Colors.blueGrey.shade800},
   };
 
- @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -168,10 +166,31 @@ class _TerminalScreenState extends State<TerminalScreen> {
     FocusScope.of(context).requestFocus(_focusNode);
   }
 
- List<String> _processCommand(List<String> segments) {
+  List<String> _processCommand(List<String> segments) {
     var command = segments[0].toLowerCase();
     List<String> response = [];
     switch (command) {
+      case 'search':
+        if (segments.length > 1) {
+          response.addAll(_searchFiles(segments.sublist(1).join(' ')));
+        } else {
+          response.add("No search pattern specified.");
+        }
+        break;
+      case 'replace':
+        if (segments.length > 3) {
+          response.add(_replaceInFile(segments[1], segments[2], segments[3]));
+        } else {
+          response.add("Usage: replace <file> <old_text> <new_text>");
+        }
+        break;
+      case 'network':
+        _getNetworkInfo().then((info) {
+          setState(() {
+            outputs.addAll(info);
+          });
+        });
+        break;
       case 'run':
         if (segments.length > 1) {
           executePythonScript(segments[1]).then((output) {
@@ -237,15 +256,15 @@ class _TerminalScreenState extends State<TerminalScreen> {
         });
         break;
       case 'exit':
-    // For Android, use SystemNavigator.pop() to close the app
-    if (Platform.isAndroid) {
-      SystemNavigator.pop();
-    } 
-    // For iOS, reset app state or navigate to the initial route
-    else if (Platform.isIOS) {
-      _resetAppState();
-    }
-    break;
+        // For Android, use SystemNavigator.pop() to close the app
+        if (Platform.isAndroid) {
+          SystemNavigator.pop();
+        } 
+        // For iOS, reset app state or navigate to the initial route
+        else if (Platform.isIOS) {
+          _resetAppState();
+        }
+        break;
       case 'help':
         response.addAll([
           "Commands:",
@@ -260,6 +279,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
           "exit - Close ITerminal",
           "help - Show this help message",
           "open - open files to view",
+          "search - Search files with pattern",
+          "replace - Replace text in file",
+          "network - Show network info",
         ]);
         break;
       default:
@@ -270,53 +292,90 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   void _resetAppState() {
-  // Example of navigating back to the initial route (home screen)
-  Navigator.of(context).popUntil((route) => route.isFirst);
-  
-  // Clear any user data you have stored
-  // For example, if you store user data in a singleton or global accessible class.
-  // UserData.clear();
-
-  // Reset any state management you are using, such as Provider, Riverpod, Bloc, etc.
-  // Example using Provider:
-  // context.read<UserDataProvider>().resetUserData();
-
-  // Clear any persistent storage you are using like Shared Preferences or a database
-  // SharedPreferences prefs = await SharedPreferences.getInstance();
-  // await prefs.clear(); // This will clear all data stored in Shared Preferences
-
-  // If using a database, you might want to delete certain tables or reset them
-  // DatabaseProvider.db.resetDatabase(); // Custom function to reset your database
-
-  // If you are using any form of caching, clear it
-  // CacheManager.clear();
-
-  // Reset any other services or controllers you might have
-  // Example: if you are using a service to keep the user logged in
-  // AuthenticationService().logout();
-
-  // If there are any other configurations or app-related settings that should be reset, do so here
-  // AppConfig.reset();
-
-  // Set any relevant app state back to its initial conditions
-  // AppStateManager.reset();
-
-  // If your app has a login flow, you might want to navigate the user to the login screen
-  // This can be a pushReplacement so that the user can't navigate back to the session
-  // Navigator.pushReplacementNamed(context, '/login');
+  if (kDebugMode) {
+    print('Resetting app state');
+  }
+  // Add your state reset logic here
 }
 
+
+  // Search files recursively
+  List<String> _searchFiles(String pattern) {
+    List<String> filesFound = [];
+    Directory(currentDirectory).listSync(recursive: true).forEach((element) {
+      if (element.path.contains(pattern)) {
+        filesFound.add(element.path);
+      }
+    });
+    return filesFound.isNotEmpty ? filesFound : ["No files found with pattern '$pattern'."];
+  }
+
+  // Replace text in file
+  String _replaceInFile(String fileName, String oldText, String newText) {
+    final filePath = path.join(currentDirectory, fileName);
+    if (File(filePath).existsSync()) {
+      String content = File(filePath).readAsStringSync();
+      content = content.replaceAll(oldText, newText);
+      File(filePath).writeAsStringSync(content);
+      return "Replaced all occurrences of '$oldText' with '$newText' in '$fileName'.";
+    } else {
+      return "File does not exist: $fileName";
+    }
+  }
+
+  // Get network information
+  Future<List<String>> _getNetworkInfo() async {
+  var connectivityResult = await (Connectivity().checkConnectivity());
+  var response = [
+    "Connection Type: ${connectivityResult.toString()}",
+  ];
+  return response;
+}
+
+
+  Future<List<String>> executePythonScript(String scriptFileName) async {
+    final results = <String>[];
+    final scriptPath = path.join(currentDirectory, scriptFileName);
+    if (kDebugMode) {
+      print("Attempting to execute script at: $scriptPath");
+    }
+    final scriptFile = File(scriptPath);
+    if (!scriptFile.existsSync()) {
+      return ["Script file does not exist: $scriptPath"];
+    }
+
+    try {
+      final process = await Process.start('python', [scriptPath]);
+      final stdoutStream = process.stdout.transform(utf8.decoder);
+      final stderrStream = process.stderr.transform(utf8.decoder);
+
+      await for (var line in stdoutStream) {
+        results.add(line);
+      }
+      await for (var line in stderrStream) {
+        results.add(line);
+      }
+      final exitCode = await process.exitCode;
+
+      if (exitCode != 0) {
+        results.add("Script exited with error code: $exitCode");
+      }
+    } catch (e) {
+      results.add("Failed to execute script: $e");
+    }
+
+    return results;
+  }
 
   List<String> handleViewFile(BuildContext context, String fileName) {
-  final filePath = path.join(currentDirectory, fileName);
-  if (File(filePath).existsSync()) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => FileViewerScreen(filePath: filePath)));
-    return [];
-  } else {
-    return ["Failed to open file '$fileName': File does not exist."];
+    final filePath = path.join(currentDirectory, fileName);
+    if (File(filePath).existsSync()) {
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => FileViewerScreen(filePath: filePath)));
+      return [];
+    } else {
+      return ["Failed to open file '$fileName': File does not exist."];
+    }
   }
-}
-
 
   List<String> handleLs() {
     try {
@@ -376,66 +435,18 @@ class _TerminalScreenState extends State<TerminalScreen> {
     }
   }
 
-  // Function to execute Python scripts
-  Future<List<String>> executePythonScript(String scriptFileName) async {
-  final results = <String>[];
-  // Join the current directory with the script file name
-  final scriptPath = path.join(currentDirectory, scriptFileName);
-
-  // Debug print to check the script path
-  if (kDebugMode) {
-    print("Attempting to execute script at: $scriptPath");
-  }
-
-  final scriptFile = File(scriptPath);
-  if (!scriptFile.existsSync()) {
-    return ["Script file does not exist: $scriptPath"];
-  }
-
-   try {
-    // Start the Python process
-    final process = await Process.start('python', [scriptPath]);
-
-    // Capture standard output and error streams
-    final stdoutStream = process.stdout.transform(utf8.decoder);
-    final stderrStream = process.stderr.transform(utf8.decoder);
-
-    // Handle standard output
-    await for (var line in stdoutStream) {
-      results.add(line);
-    }
-
-    // Handle standard error
-    await for (var line in stderrStream) {
-      results.add(line);
-    }
-
-    // Wait for the process to exit
-    final exitCode = await process.exitCode;
-
-    if (exitCode != 0) {
-      results.add("Script exited with error code: $exitCode");
-    }
-  } catch (e) {
-    results.add("Failed to execute script: $e");
-  }
-
-  return results;
-}
-
-Future<void> _requestPermissions() async {
+  Future<void> _requestPermissions() async {
     var status = await Permission.storage.status;
     if (!status.isGranted) {
       await Permission.storage.request();
     }
   }
 
-   @override
+  @override
   void initState() {
     super.initState();
     _requestPermissions();
   }
-
 }
 
 class _FileViewerScreenState extends State<FileViewerScreen> {
@@ -450,8 +461,6 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
     fileContents = File(widget.filePath).readAsStringSync();
     textController = TextEditingController(text: fileContents);
 
-    // Request focus for the text field when the state is initialized.
-    // This will bring up the keyboard for the text field.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       FocusScope.of(context).requestFocus(textFocusNode);
     });
@@ -472,7 +481,6 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Read-only highlighted code view
             HighlightView(
               fileContents,
               language: 'dart',
@@ -480,13 +488,12 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
               padding: const EdgeInsets.all(12),
               textStyle: const TextStyle(fontFamily: 'Monospace', fontSize: 12),
             ),
-            // Editable text field with toolbar options for copy and paste
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: TextField(
                 controller: textController,
                 focusNode: textFocusNode,
-                maxLines: null, // Makes it multi-line
+                maxLines: null,
                 style: const TextStyle(fontFamily: 'Monospace', fontSize: 12),
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
@@ -499,26 +506,22 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
                 toolbarOptions: const ToolbarOptions(copy: true, paste: true, selectAll: true, cut: true),
               ),
             ),
-            // Add coding helper buttons if needed
             Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        // Replace these buttons with whatever symbols you need
-        _buildSymbolButton('<'),
-        _buildSymbolButton('>'),
-        _buildSymbolButton('{'),
-        _buildSymbolButton('}'),
-        _buildSymbolButton('['),
-        _buildSymbolButton(']'),
-        // ... more symbols as needed ...
-      ],
-    ),
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildSymbolButton('<'),
+                _buildSymbolButton('>'),
+                _buildSymbolButton('{'),
+                _buildSymbolButton('}'),
+                _buildSymbolButton('['),
+                _buildSymbolButton(']'),
+              ],
+            ),
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // Save the edited content back to file
           File(widget.filePath).writeAsStringSync(textController.text);
           Navigator.pop(context);
         },
@@ -532,7 +535,6 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
     final textSelection = textController.selection;
     final newText = text.replaceRange(textSelection.start, textSelection.end, textToInsert);
     textController.text = newText;
-    // Set the cursor position at the end of the inserted text
     textController.selection = textSelection.copyWith(
       baseOffset: textSelection.start + textToInsert.length,
       extentOffset: textSelection.start + textToInsert.length,
@@ -543,7 +545,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
     return ElevatedButton(
       onPressed: () => insertText(symbol),
       style: ElevatedButton.styleFrom(
-        minimumSize: Size(44, 44), // increases touch target
+        minimumSize: const Size(44, 44),
         padding: EdgeInsets.zero,
       ),
       child: Text(symbol),
