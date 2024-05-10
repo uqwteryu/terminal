@@ -15,7 +15,8 @@ void main() {
 }
 
 class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+  // ignore: use_key_in_widget_constructors
+  const MainApp({Key? key});
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +31,8 @@ class MainApp extends StatelessWidget {
 }
 
 class TerminalScreen extends StatefulWidget {
-  const TerminalScreen({super.key});
+  // ignore: use_key_in_widget_constructors
+  const TerminalScreen({Key? key});
 
   @override
   // ignore: library_private_types_in_public_api
@@ -187,7 +189,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
       case 'network':
         _getNetworkInfo().then((info) {
           setState(() {
-            outputs.addAll(info);
+            outputs.add(info);
+            // Scroll to the bottom after updating outputs
+            _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
           });
         });
         break;
@@ -292,12 +296,34 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   void _resetAppState() {
-  if (kDebugMode) {
-    print('Resetting app state');
-  }
-  // Add your state reset logic here
-}
+    if (kDebugMode) {
+      print('Resetting app state');
+    }
 
+    // Close any open streams or connections
+    // For example, if you have any open streams or connections, close them here
+    // streamController.close();
+    // socket.close();
+
+    // Release any allocated resources
+    // For example, if you have any resources that need to be released, do it here
+    // resourceManager.releaseResources();
+
+    // Perform any other cleanup tasks
+    // For example, if there are any other cleanup tasks, perform them here
+    // cleanupTask();
+
+    // Reset state variables to their initial values
+    setState(() {
+      outputs.clear();
+      currentDirectory = Directory.current.path;
+      textColor = Colors.green;
+      backgroundColor = Colors.black;
+    });
+
+    // Additional state reset logic can go here
+    // You can add any other necessary reset logic here
+  }
 
   // Search files recursively
   List<String> _searchFiles(String pattern) {
@@ -324,14 +350,15 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   // Get network information
-  Future<List<String>> _getNetworkInfo() async {
-  var connectivityResult = await (Connectivity().checkConnectivity());
-  var response = [
-    "Connection Type: ${connectivityResult.toString()}",
-  ];
-  return response;
-}
-
+  Future<String> _getNetworkInfo() async {
+    var connectivityResult = await (Connectivity().checkConnectivity());
+    // ignore: unrelated_type_equality_checks
+    if (connectivityResult == ConnectivityResult.none) {
+      return "No network connection available.";
+    } else {
+      return "Connection Type: ${connectivityResult.toString()}";
+    }
+  }
 
   Future<List<String>> executePythonScript(String scriptFileName) async {
     final results = <String>[];
@@ -378,15 +405,41 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   List<String> handleLs() {
-    try {
-      return Directory(currentDirectory)
-          .listSync()
-          .map((item) => path.basename(item.path) + (item.statSync().type == FileSystemEntityType.directory ? '/' : ''))
-          .toList();
-    } catch (e) {
-      return ["Error listing directory: $e"];
+  try {
+    var directory = Directory(currentDirectory);
+    var contents = directory.listSync();
+
+    // Sort directories and files separately
+    List<FileSystemEntity> directories = [];
+    List<FileSystemEntity> files = [];
+
+    for (var item in contents) {
+      if (item is File) {
+        files.add(item);
+      } else if (item is Directory) {
+        directories.add(item);
+      }
     }
+
+    // Sort items alphabetically
+    directories.sort((a, b) => path.basename(a.path).compareTo(path.basename(b.path)));
+    files.sort((a, b) => path.basename(a.path).compareTo(path.basename(b.path)));
+
+    List<String> output = [];
+    // Add directories to output
+    for (var item in directories) {
+      output.add("${path.basename(item.path)}/");
+    }
+    // Add files to output
+    for (var item in files) {
+      output.add(path.basename(item.path));
+    }
+
+    return output;
+  } catch (e) {
+    return ["Error listing directory: $e"];
   }
+}
 
   String handleCd(String newPath) {
     final newDir = path.normalize(path.join(currentDirectory, newPath));
