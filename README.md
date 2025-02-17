@@ -11,10 +11,6 @@ ITerminal is a simple terminal emulator app built using Flutter, allowing users 
 - **Customization:** Customize text and background themes to suit your preferences.
 - **File Viewing:** View text files within the app with syntax highlighting.
 
-## Screenshots
-
-[Insert Screenshots Here]
-
 ## Installation
 
 1. Clone this repository to your local machine.
